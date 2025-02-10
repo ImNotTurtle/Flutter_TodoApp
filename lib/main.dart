@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:todo_app/screens/main_screen.dart';
+import 'package:window_manager/window_manager.dart';
 
-import 'package:flutter/material.dart';
-
-import 'package:flutter/material.dart';
 
 final ColorScheme customColorScheme = ColorScheme(
   primary: Color(0xFF663399),        // Deep Purple (RebeccaPurple)
@@ -12,7 +10,7 @@ final ColorScheme customColorScheme = ColorScheme(
   secondary: Color(0xFF53297D),      // Slightly desaturated Deep Purple
   secondaryContainer: Color(0xFF3E2167), // Darker secondary
   surface: Color(0xFF262626),        // Dark surface color
-  // background: Color(0xFF1A1A1A),     // Dark background color
+  surfaceContainerHighest: Color(0xFF1A1A1A),     // Dark background color
   error: Color(0xFFFF3333),          // Bright red for error
   onPrimary: Color(0xFFFFFFFF),      // White text on primary
   onSecondary: Color(0xFFFFFFFF),    // White text on secondary
@@ -48,7 +46,23 @@ final ThemeData customThemeData = ThemeData(
 
 
 
-void main() {
+void main() async{
+  WidgetsFlutterBinding.ensureInitialized();
+  await windowManager.ensureInitialized();
+
+  WindowOptions windowOptions = const WindowOptions(
+    title: 'Todo app',
+    size: Size(700, 600),
+    center: true,
+    backgroundColor: Colors.transparent,
+    titleBarStyle: TitleBarStyle.normal,
+  );
+
+  windowManager.waitUntilReadyToShow(windowOptions, () async {
+    await windowManager.show();
+    await windowManager.focus();
+  });
+
   runApp(const ProviderScope(child: MyApp()));
 }
 

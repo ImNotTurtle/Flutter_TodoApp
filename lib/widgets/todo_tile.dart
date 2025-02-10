@@ -26,6 +26,7 @@ class TodoTile extends ConsumerStatefulWidget {
 
 class _TodoTileState extends ConsumerState<TodoTile> {
   bool isCompleted = false;
+  late TodoItem ownTodo;
   late TextEditingController titleController;
 
   @override
@@ -34,6 +35,7 @@ class _TodoTileState extends ConsumerState<TodoTile> {
     isCompleted = widget.todo.isCompleted;
     titleController = TextEditingController();
     titleController.text = widget.todo.title;
+    ownTodo = widget.todo;
   }
 
   @override
@@ -41,48 +43,93 @@ class _TodoTileState extends ConsumerState<TodoTile> {
     return widget.editable == false ? buildCheckboxListTile() : buildListTile();
   }
 
+  //show widget in non-editable mode
   Widget buildCheckboxListTile() {
-    var datetime = DateFormat('HH:mm dd/MM/yy').format(widget.todo.date);
-    return CheckboxListTile(
-      value: isCompleted,
-      secondary: Text((widget.index + 1).toString()),
-      subtitle: Text(datetime),
-      title: Text(widget.todo.title),
-      onChanged: (newValue) {
-        setState(() {
-          isCompleted = newValue ?? false;
-        });
-        ref.read(widget.provider.notifier).updateTodoCompletion(widget.index, isCompleted);
-      },
+    var datetime = DateFormat('HH:mm dd/MM/yy').format(ownTodo.date);
+    return Card(
+      child: CheckboxListTile(
+        value: isCompleted,
+        secondary: Text(
+          (widget.index + 1).toString(),
+          style: Theme.of(context).textTheme.bodyLarge,
+        ),
+        subtitle: ownTodo.includeTime ? Text(datetime) : null,
+        title: Text(ownTodo.title),
+        onChanged: (newValue) {
+          setState(() {
+            isCompleted = newValue ?? false;
+          });
+          ownTodo.isCompleted = isCompleted;
+          ref.read(widget.provider.notifier).updateTodo(ref, widget.index, ownTodo);
+        },
+      ),
     );
   }
 
+  //show widget in editable mode
   Widget buildListTile() {
-    return Container(
-      decoration: BoxDecoration(borderRadius: BorderRadius.circular(8.0), border: Border.all(width: 1.0, color: Colors.white)),
+    return Card(
       child: ListTile(
-        leading: Text((widget.index + 1).toString()),
+        leading: Wrap(
+          children: [
+            ReorderableDragStartListener(
+              index: widget.index,
+              child: Icon(Icons.drag_indicator, color: Theme.of(context).colorScheme.onSurface.withAlpha(100),),
+            ),
+            const SizedBox(width: 6.0),
+            Text(
+              (widget.index + 1).toString(),
+              style: Theme.of(context).textTheme.bodyLarge,
+            ),
+          ],
+        ),
         title: TextField(
           controller: titleController,
           decoration: InputDecoration(border: OutlineInputBorder()),
-          onChanged:(value) {
-            ref.read(widget.provider.notifier).updateTodoTitle(widget.index, value);
+          onChanged: (value) {
+            ownTodo.title = value;
+            ref
+                .read(widget.provider.notifier)
+                .updateTodo(ref, widget.index, ownTodo);
           },
         ),
-        subtitle: DateTimeSelector(
-          initialTime: widget.todo.time,
-          initialDate: widget.todo.date,
-          onTimeSelect: (newTime) {
-            ref.read(widget.provider.notifier).updateTodoTime(widget.index, newTime);
-          },
-          onDateSelect: (newDate) {
-            ref.read(widget.provider.notifier).updateTodoDate(widget.index, newDate);
-          },
+        subtitle: Column(
+          children: [
+            Row(
+              children: [
+                Checkbox(
+                  value: ownTodo.includeTime,
+                  onChanged: (value) {
+                    setState(() => ownTodo.includeTime = value ?? false);
+                  },
+                ),
+                Text('Include time'),
+              ],
+            ),
+            if (ownTodo.includeTime == true) ...[
+              DateTimeSelector(
+                initialTime: ownTodo.time,
+                initialDate: ownTodo.date,
+                onTimeSelect: (newTime) {
+                  ownTodo.time = newTime;
+                  ref
+                      .read(widget.provider.notifier)
+                      .updateTodo(ref, widget.index, ownTodo);
+                },
+                onDateSelect: (newDate) {
+                  ownTodo.date = newDate;
+                  ref
+                      .read(widget.provider.notifier)
+                      .updateTodoDate(ref, widget.index, newDate);
+                },
+              ),
+            ],
+          ],
         ),
         trailing: IconButton(
           icon: Icon(Icons.highlight_remove),
           onPressed: () {
-            ref.read(widget.provider.notifier).deleteTodo(widget.index);
+            ref.read(widget.provider.notifier).deleteTodo(ref, widget.index);
           },
         ),
       ),
