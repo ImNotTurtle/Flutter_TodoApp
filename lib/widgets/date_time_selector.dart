@@ -8,8 +8,8 @@ class DateTimeSelector extends StatefulWidget {
     DateTime? initialDate,
     required this.onTimeSelect,
     required this.onDateSelect,
-  }) : initialDate = initialDate ?? DateTime.now(),
-       initialTime = initialTime ?? TimeOfDay.now();
+  })  : initialDate = initialDate ?? DateTime.now(),
+        initialTime = initialTime ?? TimeOfDay.now();
 
   final TimeOfDay initialTime;
   final DateTime initialDate;
@@ -35,32 +35,34 @@ class _DateTimeSelectorState extends State<DateTimeSelector> {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    return Wrap(
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: 8.0,
+      runSpacing: 4.0,
       children: [
         IconButton(
-          icon: Icon(Icons.timer_outlined),
+          icon: const Icon(Icons.timer_outlined),
           onPressed: () async {
             var newTime = await showTimePicker(
               context: context,
               initialTime: selectedTime,
             );
-            if(newTime != null){
+            if (newTime != null) {
               setState(() => selectedTime = newTime);
               widget.onTimeSelect(selectedTime);
             }
           },
         ),
         Text(
-          '${selectedTime.hour.toString().padLeft(2, '0')}: ${selectedTime.minute.toString().padLeft(2, '0')}',
-        ), //pad time with 0 as prefix
-        const SizedBox(width: 24),
+          selectedTime.format(context),
+        ),
         IconButton(
-          icon: Icon(Icons.calendar_month),
+          icon: const Icon(Icons.calendar_month),
           onPressed: () async {
             var newDate = await showDatePicker(
               context: context,
-              firstDate: DateTime.parse('1900-01-01'),
-              lastDate: DateTime.parse('9999-12-30'),
+              firstDate: DateTime(1900),
+              lastDate: DateTime(2100),
               initialDate: selectedDate,
             );
             if (newDate != null) {

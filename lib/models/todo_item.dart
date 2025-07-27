@@ -1,93 +1,96 @@
 import 'package:flutter/material.dart';
+import 'package:todo_app/models/todo_task_time.dart';
+import 'package:uuid/uuid.dart';
+
+final _kUuid = Uuid();
 
 class TodoItem {
-  //this index should useful when having changes in filtered list
-  //to keep track where it original is in the provider
-  int? index;
-
+  final String id;
+  String groupId;
   String title;
   bool isCompleted;
   DateTime _date;
   bool includeTime;
+  TodoTaskTime? taskTime;
 
   DateTime get date => DateTime(_date.year, _date.month, _date.day);
-  TimeOfDay get time => TimeOfDay(hour: date.hour, minute: date.minute);
+  TimeOfDay get time => TimeOfDay(hour: _date.hour, minute: _date.minute);
 
   set time(TimeOfDay t) {
     _date = DateTime(date.year, date.month, date.day, t.hour, t.minute);
   }
 
   set date(DateTime d) {
-    _date = DateTime(d.year, d.month, d.day, date.hour, date.minute);
+    _date = DateTime(d.year, d.month, d.day, _date.hour, _date.minute);
   }
 
   TodoItem({
+    String? id,
+    required this.groupId,
     required this.title,
     bool? isCompleted,
     DateTime? date,
-    this.index,
-    includeTime,
+    this.includeTime = false,
+    this.taskTime,
   }) : isCompleted = isCompleted ?? false,
        _date = date ?? DateTime.now(),
-       includeTime = includeTime ?? (date != null);
+       id = id ?? _kUuid.v4();
 
-  TodoItem.createDummy()
-    : title = 'Untitled',
+  TodoItem.createDummy({required this.groupId})
+    : id = _kUuid.v4(),
+      title = '',
       isCompleted = false,
       _date = DateTime.now(),
-      includeTime = false;
+      includeTime = false,
+      taskTime = null;
 
-  TodoItem copyWith({String? title, bool? isCompleted}) {
+  TodoItem copyWith({
+    String? id,
+    String? groupId,
+    String? title,
+    bool? isCompleted,
+    DateTime? date,
+    bool? includeTime,
+    TodoTaskTime? taskTime,
+  }) {
     return TodoItem(
+      id: id ?? this.id,
+      groupId: groupId ?? this.groupId,
       title: title ?? this.title,
       isCompleted: isCompleted ?? this.isCompleted,
+      date: date ?? this.date,
+      includeTime: includeTime ?? this.includeTime,
+      taskTime: taskTime ?? this.taskTime,
     );
-  }
-
-  TodoItem copy() {
-    return TodoItem(
-      title: title,
-      isCompleted: isCompleted,
-      index: index,
-      date: date,
-      includeTime: includeTime,
-    );
-  }
-
-  void setIndex(int index) {
-    this.index = index;
   }
 
   void toggleCompletion() {
     isCompleted = !isCompleted;
   }
 
-  void update({
-    String? title,
-    bool? isCompleted,
-    DateTime? date,
-    TimeOfDay? time,
-  }) {
-    title = title ?? this.title;
-    isCompleted = isCompleted ?? this.isCompleted;
-    date = date ?? this.date;
-    time = time ?? this.time;
-  }
+Map<String, dynamic> toJson() {
+  return {
+    'id': id,
+    'group_id': groupId,
+    'title': title,
+    'is_completed': isCompleted,
+    'date': _date.toIso8601String(),
+    'include_time': includeTime,
+    'task_time_string': taskTime?.toString(),
+  };
+}
 
-  Map<String, dynamic> toJson() {
-    return {
-      'title': title,
-      'isCompleted': isCompleted,
-      'date': date.toIso8601String(),
-      'includeTime': includeTime,
-    };
-  }
-
-  factory TodoItem.fromJson(Map<String, dynamic> json) {
-    return TodoItem(
-      title: json['title'],
-      isCompleted: json['isCompleted'],
-      date: DateTime.parse(json['date']),
-    )..includeTime = json['includeTime'] ?? false;
+factory TodoItem.fromJson(Map<String, dynamic> json) {
+  return TodoItem(
+    id: json['id'],
+    groupId: json['group_id'],
+    title: json['title'],
+    isCompleted: json['is_completed'], // <-- Lấy từ 'is_completed'
+    date: DateTime.parse(json['date']),
+    includeTime: json['include_time'] ?? false, // <-- Lấy từ 'include_time'
+    taskTime: json['task_time_string'] != null
+        ? TodoTaskTime.fromString(json['task_time_string'])
+        : null,
+  );
   }
 }

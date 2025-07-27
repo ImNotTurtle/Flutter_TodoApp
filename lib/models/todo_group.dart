@@ -1,47 +1,23 @@
-import 'package:todo_app/models/todo_item.dart';
 import 'package:uuid/uuid.dart';
 
 final uuid = Uuid();
 
 class TodoGroup {
-  String id;
+  final String id;
   String title;
-  List<TodoItem> todoItems;
 
-  TodoGroup({required this.title, required this.todoItems, String? id}) : id = id ?? uuid.v4();
-  TodoGroup.createEmpty() : this(title: 'Untitled', todoItems: []);
+  TodoGroup({required this.title, String? id}) : id = id ?? uuid.v4();
+  TodoGroup.createEmpty() : this(title: '');
 
-  TodoGroup copy() {
-    return TodoGroup(
-      title: title,
-      todoItems: todoItems.map((item) => item.copy()).toList(),
-    );
-  }
-
-  void update({String? title, List<TodoItem>? todoItems}) {
-    if (title != null) {
-      this.title = title;
-    }
-
-    if (todoItems != null) {
-      this.todoItems = todoItems;
-    }
+  TodoGroup copyWith({String? id, String? title}) {
+    return TodoGroup(id: id ?? this.id, title: title ?? this.title);
   }
 
   factory TodoGroup.fromJson(Map<String, dynamic> json) {
-    return TodoGroup(
-      title: json['title'],
-      todoItems:
-          (json['todoItems'] as List)
-              .map((item) => TodoItem.fromJson(item))
-              .toList(),
-    );
+    return TodoGroup(id: json['id'], title: json['title']);
   }
 
   Map<String, dynamic> toJson() {
-    return {
-      'title': title,
-      'todoItems': todoItems.map((item) => item.toJson()).toList(),
-    };
+    return {'id': id, 'title': title};
   }
 }

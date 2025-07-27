@@ -7,6 +7,6 @@ class MainScreen extends StatelessWidget{
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(appBar: AppBar(title: Text('Todo app'),), body: const TodoScreen());
+    return Scaffold(body: const TodoScreen());
   }
 }
