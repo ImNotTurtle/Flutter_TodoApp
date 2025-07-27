@@ -2,11 +2,10 @@
     "version": 2,
     "builds": [
       {
-        "src": "/**",
-        "use": "@vercel/static-build",
+        "src": "pubspec.yaml",
+        "use": "@vercel/flutter",
         "config": {
-          "buildCommand": "sh vercel-build.sh",
-          "outputDirectory": "build/web"
+          "entrypoint": "lib/main_web.dart"
         }
       }
     ],
