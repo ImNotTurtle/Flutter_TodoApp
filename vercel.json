@@ -1,14 +1,5 @@
 {
     "version": 2,
-    "builds": [
-      {
-        "src": "pubspec.yaml",
-        "use": "@vercel/flutter",
-        "config": {
-          "entrypoint": "lib/main_web.dart"
-        }
-      }
-    ],
     "rewrites": [
       {
         "source": "/(.*)",
