@@ -1,126 +1,132 @@
-// lib/providers/todo_group_provider.dart
-import 'dart:developer';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:todo_app/models/todo_group.dart';
-// import 'package:todo_app/models/todo_item.dart'; // Không cần TodoItem ở đây nữa
-// import 'package:todo_app/providers/todo_provider.dart'; // Không cần import trực tiếp để updateTodoGroup nữa
+import 'package:todo_app/providers/todo_provider.dart';
 import 'package:todo_app/services/supabase_service.dart';
 
-class TodoGroupStateNotifier extends StateNotifier<List<TodoGroup>> {
-  final SupabaseService _supabaseService;
-  List<TodoGroup> _initialGroups = []; // Lưu trữ trạng thái ban đầu của các nhóm
+// 1. Chuyển từ StateNotifier sang AsyncNotifier
+class TodoGroupNotifier extends AsyncNotifier<List<TodoGroup>> {
+  List<TodoGroup> _initialGroups = [];
 
-  TodoGroupStateNotifier(this._supabaseService) : super([]);
-
-  List<TodoGroup> get groups => state;
-
-  Future<void> loadGroups() async {
-    try {
-      // Chỉ fetch groups, không cần join todo_items ở đây nữa
-      final fetchedGroups = await _supabaseService.fetchTodoGroups(); // Sẽ cần tạo phương thức này trong SupabaseService
-      state = fetchedGroups;
-      _initialGroups = state.map((g) => g.copyWith()).toList(); // Lưu trạng thái ban đầu
-    } catch (e) {
-      log('Error loading groups: $e');
-    }
+  // 2. Không cần constructor, logic khởi tạo chuyển vào hàm build()
+  @override
+  Future<List<TodoGroup>> build() async {
+    // Hàm build chịu trách nhiệm load dữ liệu ban đầu
+    final supabaseService = ref.read(supabaseServiceProvider);
+    final fetchedGroups = await supabaseService.getTodoGroups();
+    _initialGroups = fetchedGroups.map((g) => g.copyWith()).toList();
+    return fetchedGroups;
   }
 
-  // Phương thức này chỉ thêm group vào state cục bộ, không lưu DB ngay
   Future<int> createGroup({String? title}) async {
     final newGroup = TodoGroup.createEmpty();
     if (title != null && title.trim().isNotEmpty) {
       newGroup.title = title;
     }
-    state = [...state, newGroup];
-    return state.length - 1; // Trả về index của nhóm mới trong state
+
+    // Lấy state hiện tại và thêm group mới vào
+    final previousState = state.valueOrNull ?? [];
+    state = AsyncData([...previousState, newGroup]);
+    return (state.valueOrNull ?? []).length - 1;
   }
 
-  // Xóa một nhóm khỏi state cục bộ (không xóa khỏi DB ngay)
-  Future<void> deleteGroup(WidgetRef ref, int index) async {
-    _validate(index);
-    final groupIdToDelete = state[index].id;
+  Future<void> deleteGroup(int index) async {
+    final groups = state.valueOrNull ?? [];
+    if (index < 0 || index >= groups.length) {
+      throw Exception('Invalid index $index');
+    }
+    final groupIdToDelete = groups[index].id;
 
-    // TODO: Có thể cần invalidate todoProvider của group này nếu nó đang được watch ở đâu đó.
-    // Nếu bạn muốn các todo của group đó cũng bị xóa cục bộ ngay lập tức, bạn sẽ cần logic ở đây.
-    // Tuy nhiên, việc xóa khỏi DB sẽ xảy ra trong saveChanges.
-    // ref.invalidate(todoProvider(groupIdToDelete)); // Nếu bạn muốn invalidate ngay
+    // Vô hiệu hóa provider con trước khi xóa
+    ref.invalidate(todoProvider(groupIdToDelete));
 
-    state = [...state]..removeAt(index);
-    // Việc xóa khỏi DB sẽ được xử lý trong saveChanges.
-  }
-
-  String getId(int index) {
-    _validate(index);
-    return state[index].id;
+    // Cập nhật state
+    state = AsyncData([...groups]..removeAt(index));
   }
 
   void updateGroupTitle(int index, String newTitle) {
-    _validate(index);
-    state[index] = state[index].copyWith(title: newTitle); // Cập nhật bản sao
-    state = [...state]; // Kích hoạt rebuild
-    // Không lưu vào DB ngay lập tức.
-  }
-
-  // Phương thức này không còn cần thiết vì TodoGroup không chứa TodoItem nữa.
-  // Các thay đổi của TodoItem sẽ không ảnh hưởng trực tiếp đến state của TodoGroupNotifier.
-  // void updateTodoGroup(String id, List<TodoItem> newTodos) {
-  //   final index = state.indexWhere((item) => item.id == id);
-  //   if (index == -1) return;
-  //   state[index] = state[index].copyWith(todoItems: newTodos);
-  //   state = [...state];
-  // }
-
-  // Khi vào chế độ chỉnh sửa, lưu trữ trạng thái hiện tại làm bản sao ban đầu
-  void startEdit() {
-    _initialGroups = state.map((g) => g.copyWith()).toList();
-  }
-
-  // Hủy bỏ thay đổi: khôi phục lại trạng thái ban đầu
-  void cancelChanges() {
-    state = _initialGroups.map((g) => g.copyWith()).toList(); // Khôi phục bản sao sâu
-  }
-
-  // Lưu thay đổi: Đồng bộ hóa với Supabase
-  Future<void> saveChanges(WidgetRef ref) async {
-    final List<TodoGroup> currentGroups = state;
-    final List<TodoGroup> initialGroups = _initialGroups;
-
-    // 1. Xóa các nhóm đã bị xóa (so sánh với trạng thái ban đầu)
-    final deletedGroupIds = initialGroups
-        .where((initialGroup) => !currentGroups.any((currentGroup) => currentGroup.id == initialGroup.id))
-        .map((g) => g.id)
-        .toList();
-    for (final id in deletedGroupIds) {
-      await _supabaseService.deleteTodoGroup(id);
+    final groups = state.valueOrNull ?? [];
+    if (index < 0 || index >= groups.length) {
+      throw Exception('Invalid index $index');
     }
 
-    // 2. Thêm mới hoặc cập nhật các nhóm
+    final newState = List<TodoGroup>.from(groups);
+    newState[index] = newState[index].copyWith(title: newTitle);
+    state = AsyncData(newState);
+  }
+
+  void startEdit() {
+    _initialGroups = state.valueOrNull?.map((g) => g.copyWith()).toList() ?? [];
+  }
+
+  void cancelChanges() {
+    state = AsyncData(_initialGroups.map((g) => g.copyWith()).toList());
+  }
+
+  Future<void> saveChanges() async {
+    final currentGroups = state.valueOrNull ?? [];
+    final initialGroups = _initialGroups;
+    final supabaseService = ref.read(supabaseServiceProvider);
+
+    // --- BƯỚC KIỂM TRA THAY ĐỔI ---
+    final List<Future> dbTasks = [];
+
+    final deletedGroupIds =
+        initialGroups
+            .where(
+              (initial) =>
+                  !currentGroups.any((current) => current.id == initial.id),
+            )
+            .map((g) => g.id)
+            .toList();
+
+    for (final id in deletedGroupIds) {
+      dbTasks.add(supabaseService.deleteTodoGroup(id));
+    }
+
     for (final currentGroup in currentGroups) {
       final initialGroup = initialGroups.firstWhere(
         (g) => g.id == currentGroup.id,
-        orElse: () => TodoGroup.createEmpty(), // Dummy group for new items, id will be null
+        orElse: () => TodoGroup(id: '', title: ''),
       );
 
-      if (initialGroup.id == '') { // Nhóm mới (kiểm tra id rỗng vì createEmpty tạo id rỗng nếu không truyền vào)
-        await _supabaseService.addTodoGroup(currentGroup);
-      } else if (currentGroup.title != initialGroup.title) { // Tiêu đề nhóm đã thay đổi
-        await _supabaseService.updateTodoGroupTitle(currentGroup.id, currentGroup.title);
+      if (initialGroup.id == '') {
+        dbTasks.add(supabaseService.addTodoGroup(currentGroup));
+      } else if (currentGroup.title != initialGroup.title) {
+        dbTasks.add(
+          supabaseService.updateTodoGroupTitle(
+            currentGroup.id,
+            currentGroup.title,
+          ),
+        );
       }
     }
 
-    // Cập nhật _initialGroups sau khi lưu thành công
-    _initialGroups = state.map((g) => g.copyWith()).toList();
-  }
+    if (dbTasks.isEmpty) {
+      return;
+    }
 
-  void _validate(int index) {
-    if (index < 0 || index >= state.length) {
-      throw Exception('Invalid index $index');
+    // Đặt state về loading để hiển thị trên UI
+    state = const AsyncLoading();
+
+    try {
+      await Future.wait(dbTasks);
+
+      // --- SỬA LỖI: TẢI LẠI DỮ LIỆU VÀ CẬP NHẬT STATE ---
+      // Thay vì gọi build(), hãy chủ động fetch lại dữ liệu mới nhất
+      final freshGroups = await supabaseService.getTodoGroups();
+      // Cập nhật lại trạng thái ban đầu để cho lần edit tiếp theo
+      _initialGroups = freshGroups.map((g) => g.copyWith()).toList();
+      // Đặt state về AsyncData với dữ liệu mới để UI hết loading
+      state = AsyncData(freshGroups);
+      // --- KẾT THÚC SỬA LỖI ---
+    } catch (e, stackTrace) {
+      state = AsyncError(e, stackTrace);
     }
   }
 }
 
+// 3. Thay đổi cách khai báo provider
 final todoGroupProvider =
-    StateNotifierProvider<TodoGroupStateNotifier, List<TodoGroup>>((ref) {
-      final supabaseService = ref.read(supabaseServiceProvider);
-      return TodoGroupStateNotifier(supabaseService);
-    });
+    AsyncNotifierProvider<TodoGroupNotifier, List<TodoGroup>>(
+      TodoGroupNotifier.new,
+    );

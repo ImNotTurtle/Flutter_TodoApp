@@ -1,161 +1,167 @@
-import 'package:flutter/material.dart';
+import 'dart:developer';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:todo_app/models/todo_item.dart';
-import 'package:todo_app/models/todo_task_time.dart';
-// import 'package:todo_app/providers/todo_group_provider.dart'; // Không cần thiết ở đây nữa
-// import 'package:todo_app/models/todo_group.dart'; // Không cần thiết ở đây nữa
 import 'package:todo_app/services/supabase_service.dart';
-import 'dart:developer'; // Import for log
 
-class TodoStateNotifier extends StateNotifier<List<TodoItem>> {
-  final String groupId;
-  final SupabaseService _supabaseService;
-  List<TodoItem> _initialItems = []; // Lưu trữ trạng thái ban đầu của các mục todo
+// 1. Chuyển từ StateNotifier sang FamilyAsyncNotifier, với String là kiểu tham số family
+class TodoNotifier extends FamilyAsyncNotifier<List<TodoItem>, String> {
+  List<TodoItem> _initialItems = [];
 
-  TodoStateNotifier({
-    required this.groupId,
-    required SupabaseService supabaseService,
-  })  : _supabaseService = supabaseService,
-        super([]) {
-    _loadTodoItemsForGroup();
+  // 2. Hàm build giờ đây nhận tham số family (groupId)
+  @override
+  Future<List<TodoItem>> build(String groupId) async {
+    final supabaseService = ref.read(supabaseServiceProvider);
+    final fetchedItems = await supabaseService.getTodoItemsForGroup(groupId);
+    _initialItems = fetchedItems.map((item) => item.copyWith()).toList();
+    return fetchedItems;
   }
 
-  Future<void> _loadTodoItemsForGroup() async {
-    try {
-      final fetchedItems = await _supabaseService.getTodoItemsForGroup(groupId);
-      state = fetchedItems;
-      _initialItems = state.map((item) => item.copyWith()).toList();
-    } catch (e) {
-      log('Error loading todo items for group $groupId: $e'); // Sử dụng log thay vì print
-      state = [];
-    }
-  }
-
-  // Khi vào chế độ chỉnh sửa, lưu trữ trạng thái hiện tại làm bản sao ban đầu
   void startEdit() {
-    _initialItems = state.map((item) => item.copyWith()).toList();
+    _initialItems =
+        state.valueOrNull?.map((item) => item.copyWith()).toList() ?? [];
   }
 
-  // Thêm một mục todo mới vào bản sao trạng thái (không lưu vào DB ngay)
-  void addTodo(WidgetRef ref, TodoItem item) {
-    item.groupId = groupId;
-    state = [...state, item];
-    // Không cần _notifyUpdate(ref) nếu TodoGroup không quan tâm đến TodoItem nữa
-    // và state thay đổi đã kích hoạt rebuild.
+  void createTodo() {
+    final groupId = arg; // Lấy groupId từ tham số family
+    final item = TodoItem.createDummy(groupId: groupId);
+    final previousState = state.valueOrNull ?? [];
+    state = AsyncData([...previousState, item]);
   }
 
-  void createTodo(WidgetRef ref) {
-    TodoItem item = TodoItem.createDummy(groupId: groupId);
-    state = [...state, item];
-    // Không cần _notifyUpdate(ref)
-  }
-
-  // Xóa một mục todo khỏi bản sao trạng thái (không xóa khỏi DB ngay)
   void deleteTodo(String todoId) {
-    final index = state.indexWhere((item) => item.id == todoId);
-    if (index == -1) return;
-
-    state = [...state]..removeAt(index);
-    // Không cần _notifyUpdate(ref)
+    final items = state.valueOrNull ?? [];
+    state = AsyncData(items.where((item) => item.id != todoId).toList());
   }
 
-  // Di chuyển mục todo trong bản sao trạng thái (không lưu vào DB ngay)
-  void moveTodo(WidgetRef ref, int oldIndex, int newIndex) {
-    if (oldIndex == newIndex) return;
-
-    final item = state.removeAt(oldIndex);
-    state = [...state]..insert(newIndex, item);
-
-    // Không cần _notifyUpdate(ref)
-  }
-
-  // Cập nhật một mục todo trong bản sao trạng thái (không lưu vào DB ngay)
-  void updateTodoItem({
-    required String todoId,
-    String? newTitle,
-    bool? isCompleted,
-    DateTime? newDate,
-    TimeOfDay? newTime,
-    TodoTaskTime? newTaskTime,
-    bool? includeTime,
-  }) {
-    final index = state.indexWhere((item) => item.id == todoId);
-    if (index == -1) return;
-
-    final currentTodo = state[index];
-    final updatedTodo = currentTodo.copyWith(
-      title: newTitle,
-      isCompleted: isCompleted,
-      date: newDate,
-      taskTime: newTaskTime,
-      includeTime: includeTime,
-    );
-
-    if (newTime != null) {
-      updatedTodo.time = newTime;
+  void moveTodo(int oldIndex, int newIndex) {
+    final items = state.valueOrNull ?? [];
+    if (oldIndex < 0 ||
+        oldIndex >= items.length ||
+        newIndex < 0 ||
+        newIndex > items.length) {
+      return;
     }
 
-    state = [...state]..[index] = updatedTodo; // Cập nhật bản sao trạng thái
+    final newItems = List<TodoItem>.from(items);
+    final item = newItems.removeAt(oldIndex);
+    newItems.insert(newIndex > oldIndex ? newIndex - 1 : newIndex, item);
+    state = AsyncData(newItems);
   }
 
-  // Lưu thay đổi: Đồng bộ hóa với Supabase
-  Future<void> saveChanges(WidgetRef ref) async {
-    final List<TodoItem> currentItems = state;
-    final List<TodoItem> initialItems = _initialItems;
+  void updateTodoTitle(String id, String newTitle) {
+    final items = state.valueOrNull;
+    if (items == null) return;
 
-    // 1. Xóa các mục đã bị xóa (trong initialItems nhưng không có trong currentItems)
-    final deletedItemIds = initialItems
-        .where((initialItem) => !currentItems.any((currentItem) => currentItem.id == initialItem.id))
-        .map((item) => item.id)
-        .toList();
-    for (final id in deletedItemIds) {
-      await _supabaseService.deleteTodoItem(id);
+    final index = items.indexWhere((todo) => todo.id == id);
+    if (index != -1) {
+      items[index].title = newTitle;
+      // Không cần gán lại state vì đây là thay đổi trực tiếp, không phải là thay đổi cấu trúc list
+    }
+  }
+
+  /// Cập nhật trạng thái hoàn thành của một TodoItem.
+  /// UI được cập nhật ngay lập tức, và sẽ hoàn tác nếu có lỗi từ server.
+  Future<void> updateTodoCompleteState(String todoId, bool isCompleted) async {
+    final supabaseService = ref.read(supabaseServiceProvider);
+
+    // Lấy state hiện tại một cách an toàn
+    final items = state.valueOrNull;
+    if (items == null) return;
+
+    // 1. Tìm item và lưu lại trạng thái cũ
+    final index = items.indexWhere((item) => item.id == todoId);
+    if (index == -1) return;
+
+    final originalItem = items[index];
+    final originalState = List<TodoItem>.from(
+      items,
+    ); // Tạo bản sao của state cũ
+
+    // 2. Cập nhật UI ngay lập tức (Optimistic Update)
+    final updatedItem = originalItem.copyWith(isCompleted: isCompleted);
+    final optimisticState = List<TodoItem>.from(items);
+    optimisticState[index] = updatedItem;
+    state = AsyncData(optimisticState);
+
+    // 3. Gửi yêu cầu lên Supabase
+    try {
+      await supabaseService.upsertTodoItem(updatedItem);
+      // Nếu thành công, không cần làm gì thêm vì UI đã đúng
+    } catch (e, stackTrace) {
+      log('Failed to update todo complete state: $e, $stackTrace');
+
+      // 4. Nếu có lỗi, hoàn tác lại thay đổi trên UI
+      state = AsyncData(originalState);
+
+      // (Tùy chọn) Ném lại lỗi để UI có thể hiển thị thông báo
+      state = AsyncError(e, stackTrace);
+    }
+  }
+
+  Future<void> saveChanges() async {
+    final groupId = arg;
+    final currentItems = state.valueOrNull ?? [];
+    final initialItems = _initialItems;
+    final supabaseService = ref.read(supabaseServiceProvider);
+
+    // --- BƯỚC KIỂM TRA THAY ĐỔI ---
+    final List<Future> dbTasks = [];
+
+    final deletedIds =
+        initialItems
+            .where(
+              (initial) =>
+                  !currentItems.any((current) => current.id == initial.id),
+            )
+            .map((item) => item.id)
+            .toList();
+    for (final id in deletedIds) {
+      dbTasks.add(supabaseService.deleteTodoItem(id));
     }
 
-    // 2. Thêm mới hoặc cập nhật các mục
-    for (int i = 0; i < currentItems.length; i++) {
-      final currentItem = currentItems[i];
-
-      // Tìm mục tương ứng trong initialItems bằng id
+    for (final currentItem in currentItems) {
       final initialItem = initialItems.firstWhere(
         (item) => item.id == currentItem.id,
-        orElse: () => TodoItem.createDummy(groupId: currentItem.groupId), // Tạo dummy cho mục mới
+        orElse: () => TodoItem.error,
       );
 
-      if (initialItem.title == '') { // Mục mới
-        await _supabaseService.addTodoItem(currentItem);
-      } else if (
-                 currentItem.title != initialItem.title ||
-                 currentItem.isCompleted != initialItem.isCompleted ||
-                 currentItem.date != initialItem.date ||
-                 currentItem.includeTime != initialItem.includeTime ||
-                 currentItem.taskTime?.toString() != initialItem.taskTime?.toString()
-                ) { // Mục đã thay đổi (không so sánh orderIndex nữa)
-        await _supabaseService.updateTodoItem(currentItem);
+      if (initialItem.isError ||
+          currentItem.hasChangesComparedTo(initialItem)) {
+        dbTasks.add(supabaseService.upsertTodoItem(currentItem));
       }
     }
 
-    // Cập nhật _initialItems sau khi lưu thành công để phản ánh trạng thái mới
-    _initialItems = state.map((item) => item.copyWith()).toList();
-    // Không cần _notifyUpdate(ref) nếu TodoGroup không quan tâm đến TodoItem nữa.
+    if (dbTasks.isEmpty) {
+      return;
+    }
+
+    // Đặt state về loading
+    state = const AsyncLoading();
+
+    try {
+      await Future.wait(dbTasks);
+
+      // --- SỬA LỖI: TẢI LẠI DỮ LIỆU VÀ CẬP NHẬT STATE ---
+      // Thay vì gọi build(), hãy chủ động fetch lại dữ liệu mới nhất cho group này
+      final freshItems = await supabaseService.getTodoItemsForGroup(groupId);
+      // Cập nhật lại trạng thái ban đầu
+      _initialItems = freshItems.map((item) => item.copyWith()).toList();
+      // Đặt state về AsyncData với dữ liệu mới
+      state = AsyncData(freshItems);
+      // --- KẾT THÚC SỬA LỖI ---
+    } catch (e, stackTrace) {
+      state = AsyncError(e, stackTrace);
+    }
   }
 
-  // Hủy bỏ thay đổi: khôi phục lại trạng thái ban đầu
-  void cancelChanges(WidgetRef ref) {
-    state = _initialItems.map((item) => item.copyWith()).toList(); // Khôi phục bản sao sâu
-    // Không cần _notifyUpdate(ref)
+  void cancelChanges() {
+    state = AsyncData(_initialItems.map((item) => item.copyWith()).toList());
   }
 }
 
+// 3. Thay đổi cách khai báo provider
 final todoProvider =
-    StateNotifierProvider.family<TodoStateNotifier, List<TodoItem>, String>((
-      ref,
-      groupId,
-    ) {
-      final supabaseService = ref.read(supabaseServiceProvider);
-      // Không còn cần todoGroups hoặc todoGroup ở đây để lấy items
-      return TodoStateNotifier(
-        groupId: groupId,
-        supabaseService: supabaseService,
-      );
-    });
+    AsyncNotifierProvider.family<TodoNotifier, List<TodoItem>, String>(
+      TodoNotifier.new,
+    );

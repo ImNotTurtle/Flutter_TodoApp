@@ -3,189 +3,141 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:todo_app/models/todo_group.dart';
 import 'package:todo_app/widgets/dialogs/todo_group_dialog.dart';
 
-class TodoGroupSidebarInfo {
-  final List<String> titleList;
-  const TodoGroupSidebarInfo({required this.titleList});
-}
-
-class TodoGroupSidebar extends ConsumerStatefulWidget {
+class TodoGroupSidebar extends ConsumerWidget {
   final void Function(int tabIndex, {bool isMobile}) onTabSelect;
-  final void Function(TodoGroupSidebarInfo updatedInfo) onTabUpdate;
+  final void Function(int index, String newTitle) onTabUpdate;
+  final void Function(String title) onCreateGroup;
   final void Function(int todoGroupIndex) onDelete;
   final int selectedIndex;
   final List<TodoGroup> todoGroup;
+
   const TodoGroupSidebar({
     super.key,
     required this.todoGroup,
     required this.onTabSelect,
     required this.selectedIndex,
     required this.onTabUpdate,
+    required this.onCreateGroup,
     required this.onDelete,
   });
 
-  @override
-  ConsumerState<TodoGroupSidebar> createState() {
-    return _TodoGroupSidebarState();
-  }
-}
-
-class _TodoGroupSidebarState extends ConsumerState<TodoGroupSidebar> {
-  int selectedIndex = 0;
-  TodoGroupSidebarInfo groupInfo = const TodoGroupSidebarInfo(titleList: []);
-
-  @override
-  void initState() {
-    super.initState();
-    selectedIndex = widget.selectedIndex;
-    groupInfo = TodoGroupSidebarInfo(
-      titleList: widget.todoGroup.map((item) => item.title).toList(),
-    );
-  }
-
-  @override
-  void didUpdateWidget(covariant TodoGroupSidebar oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    selectedIndex = widget.selectedIndex;
-    groupInfo = TodoGroupSidebarInfo(
-      titleList: widget.todoGroup.map((item) => item.title).toList(),
-    );
-  }
-  
-  void _editTodoGroup(int index) async {
+  void _editTodoGroup(BuildContext context, int index) async {
     final response = await showDialog<TodoGroupResponse>(
       context: context,
-      builder:
-          (ctx) => TodoGroupDialog(initialTitle: groupInfo.titleList[index]),
+      builder: (ctx) => TodoGroupDialog(initialTitle: todoGroup[index].title),
     );
-    if (response != null) {
-      setState(() => groupInfo.titleList[index] = response.title);
-      widget.onTabUpdate(groupInfo);
+    if (response != null && response.title.isNotEmpty) {
+      onTabUpdate(index, response.title);
     }
   }
 
-  void _createTodoGroup() async {
+  void _createTodoGroup(BuildContext context) async {
     final response = await showDialog<TodoGroupResponse>(
       context: context,
       builder: (ctx) => const TodoGroupDialog(),
     );
-    if (response != null) {
-      _addTodoGroup(response);
+    if (response != null && response.title.isNotEmpty) {
+      onCreateGroup(response.title);
     }
   }
 
-  void _addTodoGroup(TodoGroupResponse response) {
-    setState(() => groupInfo.titleList.add(response.title));
-    widget.onTabUpdate(groupInfo);
-  }
-
-  void _deleteTodoGroup(int todoGroupIndex) async {
-    bool? result = await showDialog(
+  void _deleteTodoGroup(BuildContext context, int todoGroupIndex) async {
+    final result = await showDialog<bool>(
       context: context,
-      builder:
-          (ctx) => AlertDialog(
-            title: const Text("Confirm"),
-            content: const Text("This action can not be undone"),
-            actions: [
-              TextButton(
-                onPressed:
-                    () => Navigator.of(ctx).pop(false),
-                child: const Text("No"),
-              ),
-              ElevatedButton(
-                onPressed:
-                    () =>
-                        Navigator.of(ctx).pop(true),
-                child: const Text("Yes"),
-              ),
-            ],
+      builder: (ctx) => AlertDialog(
+        title: const Text("Confirm Delete"),
+        content: const Text("This action cannot be undone."),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text("No"),
           ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text("Yes"),
+          ),
+        ],
+      ),
     );
 
-    if (result != null && result) {
-      setState(() => groupInfo.titleList.removeAt(todoGroupIndex));
-      widget.onDelete(todoGroupIndex);
+    if (result == true) {
+      onDelete(todoGroupIndex);
     }
   }
 
-  void _showMenu(BuildContext context, TapDownDetails details, int todoIndex) {
-    final RenderBox overlay =
-        Overlay.of(context).context.findRenderObject() as RenderBox;
+  void _showMenu(BuildContext context, Offset globalPosition, int todoIndex) {
+    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
 
     showMenu(
       context: context,
       position: RelativeRect.fromRect(
-        details.globalPosition & const Size(40, 40),
+        globalPosition & const Size(40, 40),
         Offset.zero & overlay.size,
       ),
       items: [
         PopupMenuItem(
+          onTap: () => _editTodoGroup(context, todoIndex),
           child: const Text('Edit'),
-          onTap: () {
-            _editTodoGroup(todoIndex);
-          },
         ),
         PopupMenuItem(
+          onTap: () => _deleteTodoGroup(context, todoIndex),
           child: const Text('Delete'),
-          onTap: () {
-            _deleteTodoGroup(todoIndex);
-          },
         ),
       ],
     );
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final isMobile = Scaffold.of(context).hasDrawer;
 
     return SizedBox(
       width: 200,
       child: Card(
         clipBehavior: Clip.hardEdge,
-        margin: EdgeInsets.zero, // Xóa margin để vừa khít trong Drawer
-        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero), // Xóa bo góc
-        child: Column(children: [
-          Expanded(
-            child: ListView.builder(
-              shrinkWrap: true,
-              itemCount: groupInfo.titleList.length + 1,
-              itemBuilder: (ctx, index) {
-                if (index != groupInfo.titleList.length) {
-                  return GestureDetector(
-                    onSecondaryTapDown: (details) {
-                      _showMenu(context, details, index);
-                    },
-                    child: ListTile(
-                      title: Text(groupInfo.titleList[index]),
-                      selected: selectedIndex == index,
-                      selectedTileColor: Theme.of(context).colorScheme.onSecondary,
-                      onTap: () {
-                        setState(() {
-                          selectedIndex = index;
-                        });
-                        widget.onTabSelect(index, isMobile: isMobile);
+        margin: EdgeInsets.zero,
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+        child: Column(
+          children: [
+            Expanded(
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: todoGroup.length + 1,
+                itemBuilder: (ctx, index) {
+                  if (index < todoGroup.length) {
+                    return GestureDetector(
+                      onLongPressStart: (details) {
+                        _showMenu(context, details.globalPosition, index);
                       },
-                    ),
-                  );
-                } else {
-                  return Padding(
-                    padding: const EdgeInsets.all(8.0),
-                    child: Card(
-                      elevation: 3,
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Theme.of(context).colorScheme.onSecondary,
-                        ),
-                        onPressed: _createTodoGroup,
-                        child: const Icon(Icons.add),
+                      child: ListTile(
+                        title: Text(todoGroup[index].title),
+                        selected: selectedIndex == index,
+                        selectedTileColor: Theme.of(context).colorScheme.secondaryContainer,
+                        onTap: () {
+                          onTabSelect(index, isMobile: isMobile);
+                        },
                       ),
-                    ),
-                  );
-                }
-              },
+                    );
+                  } else {
+                    return Padding(
+                      padding: const EdgeInsets.all(8.0),
+                      child: Card(
+                        elevation: 3,
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
+                          ),
+                          onPressed: () => _createTodoGroup(context),
+                          child: const Icon(Icons.add),
+                        ),
+                      ),
+                    );
+                  }
+                },
+              ),
             ),
-          ),
-        ]),
+          ],
+        ),
       ),
     );
   }

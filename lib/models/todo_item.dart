@@ -13,6 +13,14 @@ class TodoItem {
   bool includeTime;
   TodoTaskTime? taskTime;
 
+  static final TodoItem error = TodoItem._error();
+
+  bool get isError {
+    return id == error.id;
+  }
+
+  // static final TodoItem errorTodo =
+
   DateTime get date => DateTime(_date.year, _date.month, _date.day);
   TimeOfDay get time => TimeOfDay(hour: _date.hour, minute: _date.minute);
 
@@ -44,6 +52,15 @@ class TodoItem {
       includeTime = false,
       taskTime = null;
 
+  TodoItem._error()
+    : id = 'error_todo_id', // ID cố định để nhận biết
+      groupId = '',
+      title = 'Error Todo',
+      isCompleted = false,
+      _date = DateTime(0),
+      includeTime = false,
+      taskTime = null;
+
   TodoItem copyWith({
     String? id,
     String? groupId,
@@ -68,29 +85,41 @@ class TodoItem {
     isCompleted = !isCompleted;
   }
 
-Map<String, dynamic> toJson() {
-  return {
-    'id': id,
-    'group_id': groupId,
-    'title': title,
-    'is_completed': isCompleted,
-    'date': _date.toIso8601String(),
-    'include_time': includeTime,
-    'task_time_string': taskTime?.toString(),
-  };
-}
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'group_id': groupId,
+      'title': title,
+      'is_completed': isCompleted,
+      'date': _date.toIso8601String(),
+      'include_time': includeTime,
+      'task_time_string': taskTime?.toString(),
+    };
+  }
 
-factory TodoItem.fromJson(Map<String, dynamic> json) {
-  return TodoItem(
-    id: json['id'],
-    groupId: json['group_id'],
-    title: json['title'],
-    isCompleted: json['is_completed'], // <-- Lấy từ 'is_completed'
-    date: DateTime.parse(json['date']),
-    includeTime: json['include_time'] ?? false, // <-- Lấy từ 'include_time'
-    taskTime: json['task_time_string'] != null
-        ? TodoTaskTime.fromString(json['task_time_string'])
-        : null,
-  );
+  factory TodoItem.fromJson(Map<String, dynamic> json) {
+    return TodoItem(
+      id: json['id'],
+      groupId: json['group_id'],
+      title: json['title'],
+      isCompleted: json['is_completed'], // <-- Lấy từ 'is_completed'
+      date: DateTime.parse(json['date']),
+      includeTime: json['include_time'] ?? false, // <-- Lấy từ 'include_time'
+      taskTime:
+          json['task_time_string'] != null
+              ? TodoTaskTime.fromString(json['task_time_string'])
+              : null,
+    );
+  }
+
+  bool hasChangesComparedTo(TodoItem other) {
+    // So sánh tất cả các trường có thể thay đổi.
+    // Nếu bất kỳ trường nào khác nhau, trả về true.
+    return title != other.title ||
+        isCompleted != other.isCompleted ||
+        groupId != other.groupId ||
+        includeTime != other.includeTime ||
+        !_date.isAtSameMomentAs(other._date) ||
+        taskTime?.toString() != other.taskTime?.toString();
   }
 }

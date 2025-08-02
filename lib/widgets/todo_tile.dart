@@ -2,47 +2,87 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:todo_app/models/todo_item.dart';
 import 'package:intl/intl.dart';
-import 'package:todo_app/providers/todo_provider.dart'; // Import todo_provider
-import 'package:todo_app/widgets/date_time_selector.dart'; // Đảm bảo import này
-import 'package:todo_app/widgets/todo_task_time_widget.dart'; // Đảm bảo import này
+import 'package:todo_app/providers/todo_provider.dart';
+import 'package:todo_app/widgets/date_time_selector.dart';
+import 'package:todo_app/widgets/todo_task_time_widget.dart';
 
-class TodoTile extends ConsumerWidget {
-  // Đổi từ ConsumerStatefulWidget sang ConsumerWidget
+class TodoTile extends ConsumerStatefulWidget {
   const TodoTile({
     super.key,
-    required this.displayIndex, // Đổi tên từ 'index' thành 'displayIndex' cho rõ ràng
-    required this.todo,
+    required this.displayIndex,
+    required this.todoId,
+    required this.groupId,
     required this.editable,
   });
 
-  final int displayIndex; // Index dùng để hiển thị (1-based)
-  final TodoItem todo;
+  final int displayIndex;
+  final String todoId;
+  final String groupId;
   final bool editable;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    // Thêm WidgetRef ref
-    // Lấy notifier cho nhóm công việc mà todo này thuộc về
-    final todoNotifier = ref.read(todoProvider(todo.groupId).notifier);
+  ConsumerState<TodoTile> createState() => _TodoTileState();
+}
 
+class _TodoTileState extends ConsumerState<TodoTile> {
+  late final TextEditingController _titleController;
+  final FocusNode _focusNode = FocusNode();
+  bool _isEditingTitle = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // 1. Khởi tạo controller rỗng, việc đồng bộ sẽ diễn ra trong hàm build
+    _titleController = TextEditingController();
+
+    _focusNode.addListener(() {
+      if (!_focusNode.hasFocus && _isEditingTitle) {
+        setState(() {
+          _isEditingTitle = false;
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // 2. Lắng nghe sự thay đổi của một todo item cụ thể
+    final todoAsync = ref.watch(todoProvider(widget.groupId));
+
+    // Tìm item trong state data, nếu state không phải data thì không làm gì
+    final todo = todoAsync.value?.firstWhere(
+      (t) => t.id == widget.todoId,
+      orElse: () => TodoItem.error,
+    );
+
+    // Nếu không tìm thấy todo (đang tải, lỗi, hoặc đã bị xóa), hiển thị container rỗng
+    if (todo == null || todo == TodoItem.error) {
+      return const SizedBox.shrink();
+    }
+
+    // 3. Đồng bộ controller một cách an toàn trong hàm build
+    if (_titleController.text != todo.title) {
+      _titleController.text = todo.title;
+    }
+
+    final todoNotifier = ref.read(todoProvider(widget.groupId).notifier);
     final cardTheme = Theme.of(context).cardTheme;
-
     final Color cardColor =
         todo.isCompleted
-            ? Theme.of(context).colorScheme.surface.withValues(
-              alpha: 0.5,
-            ) // Màu nền mờ hơn
-            : cardTheme.color ??
-                Theme.of(
-                  context,
-                ).colorScheme.surface; // Sử dụng màu từ theme hoặc fallback
+            ? Theme.of(context).colorScheme.surface.withValues(alpha: 0.7)
+            : cardTheme.color ?? Theme.of(context).colorScheme.surface;
 
     final TextStyle textStyle = TextStyle(
       color:
           todo.isCompleted
-              ? Theme.of(context).colorScheme.onSurface.withValues(
-                alpha: 0.6,
-              ) // Chữ mờ hơn
+              ? Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6)
               : Theme.of(context).colorScheme.onSurface,
       decoration:
           todo.isCompleted ? TextDecoration.lineThrough : TextDecoration.none,
@@ -52,144 +92,104 @@ class TodoTile extends ConsumerWidget {
     );
 
     return Card(
-      margin: Theme.of(context).cardTheme.margin,
-      elevation: Theme.of(context).cardTheme.elevation,
+      margin: cardTheme.margin,
+      elevation: cardTheme.elevation,
       color: cardColor,
-      shape: Theme.of(context).cardTheme.shape,
+      shape: cardTheme.shape,
       child:
-          editable == false
-              ? _buildTodoTileNonEditable(
-                context,
-                todo,
-                todoNotifier,
-                textStyle,
-              )
-              : _buildTodoTileEditable(context, todoNotifier, todo, textStyle),
+          widget.editable
+              ? _buildEditable(context, todo, todoNotifier, textStyle)
+              : _buildNonEditable(context, todo, todoNotifier, textStyle),
     );
   }
 
-  // Phương thức riêng cho chế độ không chỉnh sửa
-  Widget _buildTodoTileNonEditable(
+  Widget _buildNonEditable(
     BuildContext context,
     TodoItem currentTodo,
-    TodoStateNotifier todoNotifier,
+    TodoNotifier todoNotifier, // Sửa kiểu dữ liệu
     TextStyle textStyle,
   ) {
-    String datetimeFormatted =
-        currentTodo.includeTime
-            ? DateFormat('HH:mm dd/MM/yy').format(currentTodo.date)
-            : DateFormat('dd/MM/yy').format(currentTodo.date);
-
     return ListTile(
-      leading: Text(
-        (displayIndex + 1).toString(),
-        style: textStyle.copyWith(
-          color: textStyle.color?.withValues(
-            alpha: textStyle.color!.a,
-          ), // Đảm bảo màu số thứ tự cũng mờ theo
-        ),
-      ),
-      subtitle: _buildSubtitle(context, currentTodo, datetimeFormatted, false),
+      leading: Text((widget.displayIndex + 1).toString(), style: textStyle),
       title: Text(currentTodo.title, style: textStyle),
+      subtitle: _buildSubtitle(context, currentTodo, todoNotifier, false),
       trailing: Checkbox(
         value: currentTodo.isCompleted,
         onChanged: (newValue) {
-          // Gọi trực tiếp notifier để cập nhật trạng thái hoàn thành
-          todoNotifier.updateTodoItem(
-            todoId: currentTodo.id,
-            isCompleted: newValue ?? false,
-          );
+          todoNotifier.updateTodoCompleteState(currentTodo.id, newValue ?? false);
         },
       ),
       onTap: () {
-        todoNotifier.updateTodoItem(
-          todoId: currentTodo.id,
-          isCompleted: !currentTodo.isCompleted,
-        );
+        final newState = !currentTodo.isCompleted;
+        todoNotifier.updateTodoCompleteState(currentTodo.id, newState);
       },
     );
   }
 
-  // Phương thức riêng cho chế độ chỉnh sửa
-  Widget _buildTodoTileEditable(
+  Widget _buildEditable(
     BuildContext context,
-    TodoStateNotifier notifier,
     TodoItem currentTodo,
+    TodoNotifier notifier, // Sửa kiểu dữ liệu
     TextStyle textStyle,
   ) {
     return ListTile(
-      leading: Wrap(
+      leading: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          // Drag handle
           ReorderableDragStartListener(
-            // Lấy index động từ danh sách hiện tại của provider state
-            index: displayIndex,
-            child: Icon(
-              Icons.drag_indicator,
-              color: Theme.of(context).colorScheme.onSurface.withAlpha(100),
-            ),
+            index: widget.displayIndex,
+            child: const Icon(Icons.drag_indicator, color: Colors.grey),
           ),
-          const SizedBox(width: 6.0),
-          Text(
-            (displayIndex + 1)
-                .toString(), // Sử dụng displayIndex cho mục đích hiển thị
-            style: textStyle.copyWith(
-              // Sử dụng textStyle cho số thứ tự
-              color: textStyle.color?.withValues(alpha: textStyle.color!.a),
-            ),
-          ),
+          const SizedBox(width: 8),
+          Text((widget.displayIndex + 1).toString(), style: textStyle),
         ],
       ),
-      title: TextField(
-        controller: TextEditingController(text: currentTodo.title),
-        decoration: const InputDecoration(
-          border: OutlineInputBorder(),
-          hintText: 'Todo title',
-        ),
-        onChanged: (value) {
-          // Cập nhật ngay khi giá trị TextField thay đổi
-          notifier.updateTodoItem(todoId: currentTodo.id, newTitle: value);
-        },
-        // Đảm bảo TextField cập nhật khi dữ liệu từ provider thay đổi
-        key: ValueKey('title_field_${currentTodo.id}'),
-        style: textStyle,
-      ),
-      subtitle: Column(
-        children: [
-          Row(
-            children: [
-              Checkbox(
-                value: currentTodo.includeTime,
+      title:
+          _isEditingTitle
+              ? TextField(
+                key: ValueKey('title_field_${currentTodo.id}'),
+                controller: _titleController,
+                focusNode: _focusNode,
+                maxLines: null,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                  contentPadding: EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 8,
+                  ),
+                  hintText: 'Todo title',
+                ),
                 onChanged: (value) {
-                  notifier.updateTodoItem(
-                    todoId: currentTodo.id,
-                    includeTime: value ?? false,
-                  );
+                  notifier.updateTodoTitle(currentTodo.id, value);
                 },
+                style: textStyle,
+              )
+              : InkWell(
+                onTap: () {
+                  setState(() {
+                    _isEditingTitle = true;
+                  });
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    _focusNode.requestFocus();
+                  });
+                },
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 12.0),
+                  child: Text(
+                    currentTodo.title.isEmpty
+                        ? 'Todo title'
+                        : currentTodo.title,
+                    style:
+                        currentTodo.title.isEmpty
+                            ? textStyle.copyWith(color: Colors.grey[600])
+                            : textStyle,
+                  ),
+                ),
               ),
-              const Text('Include time'),
-            ],
-          ),
-          if (currentTodo.includeTime) ...[
-            DateTimeSelector(
-              initialTime: currentTodo.time,
-              initialDate: currentTodo.date,
-              onTimeSelect: (newTime) {
-                notifier.updateTodoItem(
-                  todoId: currentTodo.id,
-                  newTime: newTime,
-                );
-              },
-              onDateSelect: (newDate) {
-                notifier.updateTodoItem(
-                  todoId: currentTodo.id,
-                  newDate: newDate,
-                );
-              },
-            ),
-          ],
-        ],
-      ),
+      subtitle: _buildSubtitle(context, currentTodo, notifier, true),
       trailing: IconButton(
         icon: const Icon(Icons.highlight_remove),
         onPressed: () {
@@ -199,41 +199,59 @@ class TodoTile extends ConsumerWidget {
     );
   }
 
-  // Điều chỉnh _buildSubtitle để sử dụng currentTodo và có thể ẩn/hiện chi tiết
-  // Đối với ConsumerWidget, `showDetail` sẽ cần được quản lý bằng StateProvider riêng nếu bạn muốn toggle nó.
-  // Hiện tại, tôi sẽ làm cho nó hiển thị tất cả các thông tin một cách đơn giản ở chế độ non-editable.
   Widget? _buildSubtitle(
     BuildContext context,
     TodoItem currentTodo,
-    String datetime,
+    TodoNotifier notifier, // Sửa kiểu dữ liệu
     bool isEditableMode,
   ) {
     if (isEditableMode) {
-      return null; // Subtitle đã được xây dựng trong buildTodoTileEditable
-    }
+      return Column(
+        children: [
+          Row(
+            children: [
+              Checkbox(
+                value: currentTodo.includeTime,
+                onChanged: (value) {
+                  // Chỗ này cần có hàm updateTodoItem trong TodoNotifier
+                },
+              ),
+              const Text('Include time'),
+            ],
+          ),
+          if (currentTodo.includeTime)
+            DateTimeSelector(
+              initialTime: currentTodo.time,
+              initialDate: currentTodo.date,
+              onTimeSelect: (newTime) {
+                // Chỗ này cần có hàm updateTodoItem trong TodoNotifier
+              },
+              onDateSelect: (newDate) {
+                // Chỗ này cần có hàm updateTodoItem trong TodoNotifier
+              },
+            ),
+        ],
+      );
+    } else {
+      String datetimeFormatted =
+          currentTodo.includeTime
+              ? DateFormat('HH:mm dd/MM/yy').format(currentTodo.date)
+              : DateFormat('dd/MM/yy').format(currentTodo.date);
 
-    List<Widget> children = [];
-
-    if (currentTodo.includeTime) {
-      children.add(Text(datetime));
-    }
-
-    if (currentTodo.taskTime != null) {
-      children.add(
-        TodoTaskTimeWidget(
-          taskTime: currentTodo.taskTime,
-          isEditable: false, // Không thể chỉnh sửa task time ở chế độ view
-        ),
+      List<Widget> children = [];
+      if (currentTodo.includeTime) {
+        children.add(Text(datetimeFormatted));
+      }
+      if (currentTodo.taskTime != null) {
+        children.add(
+          TodoTaskTimeWidget(taskTime: currentTodo.taskTime, isEditable: false),
+        );
+      }
+      if (children.isEmpty) return null;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: children,
       );
     }
-
-    if (children.isEmpty) {
-      return null;
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: children,
-    );
   }
 }

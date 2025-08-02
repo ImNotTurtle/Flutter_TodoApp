@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:todo_app/app.dart'; // Import widget MyApp dùng chung
 import 'package:todo_app/secret.dart';
+import 'package:todo_app/services/supabase_service.dart';
 import 'package:window_manager/window_manager.dart';
 
 /// Điểm vào (entry point) cho phiên bản Desktop.
@@ -24,11 +24,7 @@ Future<void> main() async {
   });
 
   // Khởi tạo Supabase
-  await Supabase.initialize(
-    url: kSupaProjectUrl,
-    anonKey: kSupaAnnonKey,
-    debug: true,
-  );
+  await SupabaseService.instance.init(anonKey: kSupaAnnonKey, url: kSupaProjectUrl);
 
   // Chạy ứng dụng
   runApp(const MyApp());

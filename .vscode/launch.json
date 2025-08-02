@@ -5,47 +5,22 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "todo_app",
+            "name": "Debug",
             "request": "launch",
             "type": "dart"
         },
         {
-            "name": "todo_app (profile mode)",
+            "name": "Profile",
             "request": "launch",
             "type": "dart",
             "flutterMode": "profile"
         },
         {
-            "name": "todo_app (release mode)",
+            "name": "Release",
             "request": "launch",
             "type": "dart",
             "flutterMode": "release"
         },
-        {
-            "name": "multi_select_flutter-master",
-            "cwd": "lib\\externals\\multi_select_flutter-master",
-            "request": "launch",
-            "type": "dart"
-        },
-        {
-            "name": "multi_select_flutter-master (profile mode)",
-            "cwd": "lib\\externals\\multi_select_flutter-master",
-            "request": "launch",
-            "type": "dart",
-            "flutterMode": "profile"
-        },
-        {
-            "name": "multi_select_flutter-master (release mode)",
-            "cwd": "lib\\externals\\multi_select_flutter-master",
-            "request": "launch",
-            "type": "dart",
-            "flutterMode": "release"
-        },
-        {
-            "name": "example",
-            "cwd": "lib\\externals\\multi_select_flutter-master\\example",
-            "request": "launch",
-            "type": "dart"
-        }
+
     ]
 }
